@@ -1,2 +1,4 @@
-# pdlua-show_tilde
-Signal inspector widget with multichannel input for Pd (Pure Data)
+# [show~]
+**S**nake **H**andling **O**scilloscope **W**idget *(thanks, Alex!)*
+
+Signal inspector with multichannel input for Pd (Pure Data)
