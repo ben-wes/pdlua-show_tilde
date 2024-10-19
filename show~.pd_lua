@@ -41,6 +41,7 @@ function show:reset()
   self.sigHeight = 16
   self.hover = 0
   self.max = 1
+  self.displayMax = 1
   self.maxVal = 1
   self.width = self.graphWidth + self.valWidth
   self.height = 140
@@ -159,8 +160,6 @@ function show:getrange(maxValue)
 end
 
 function show:perform(in1)
-  -- FIXME: only iterate through samples once!!
-  -- pd.post(table.unpack(in1))
   for c=1,self.inchans do
     for s=1,self.blocksize do
       local sample = in1[s + self.blocksize * (c-1)] or 0
@@ -169,8 +168,19 @@ function show:perform(in1)
       self.rms[c] = self.rms[c] * 0.9996 + math.sqrt(sample * sample) * 0.0004 -- lowpassed rms
     end
   end
-  self.maxVal = self.maxVal * 0.99
-  self.max = self.max * 0.95 + self:getrange(self.maxVal) * 0.05
+  
+  -- Gradual decay of maxVal
+  self.maxVal = self.maxVal * 0.999
+
+  -- Calculate target max value
+  local targetMax = self:getrange(math.max(self.maxVal, 1))  -- Ensure minimum of 1
+  
+  -- Smooth transition of max value
+  local transitionSpeed = 0.05  -- Adjust this value to control transition speed
+  self.max = self.max + (targetMax - self.max) * transitionSpeed
+
+  -- Smooth transition of display max
+  self.displayMax = self.displayMax + (self.max - self.displayMax) * transitionSpeed
 
   while self.sampleIndex <= self.blocksize do
     -- ring buffer
@@ -183,102 +193,94 @@ function show:perform(in1)
   end
   -- sampleIndex is the index where we start reading from the next sample block
   self.sampleIndex = self.sampleIndex - self.blocksize
-  local oldMax = self.max
-  self.max = self.max * 0.95 + self:getrange(self.maxVal) * 0.05
-  if oldMax ~= self.max then
-    self.needsRepaintLegend = true
-  end
+  
+  -- Trigger legend repaint on every frame for smooth transitions
+  self.needsRepaintLegend = true
 end
 
 function show:paint(g)
-    -- Background
-    g:set_color(248, 248, 248)
-    g:fill_all()
+  -- Background
+  g:set_color(248, 248, 248)
+  g:fill_all()
 end
 
 function show:paint_layer_2(g)
-    -- Graphs, RMS charts, and avg values
-    g:set_color(200, 200, 200)
-    g:draw_line(0, self.height/2, self.graphWidth - 1, self.height/2, 1)
+  -- Graphs, RMS charts, and avg values
+  g:set_color(200, 200, 200)
+  g:draw_line(0, self.height/2, self.graphWidth - 1, self.height/2, 1)
 
-    if self.hover == 0 then
-        -- No channel highlighted: draw in reverse order
-        for idx = #self.sigs, 1, -1 do
-            self:draw_channel(g, idx, false)
-        end
-    else
-        -- Channel highlighted: draw non-highlighted channels first, then the highlighted one
-        for idx = 1, #self.sigs do
-            if idx ~= self.hover then
-                self:draw_channel(g, idx, false)
-            end
-        end
-        if self.hover <= #self.sigs then
-            self:draw_channel(g, self.hover, true)
-        end
+  if self.hover == 0 then
+    -- No channel highlighted: draw in reverse order
+    for idx = #self.sigs, 1, -1 do
+      self:draw_channel(g, idx, false)
     end
+  else
+    -- Channel highlighted: draw non-highlighted channels first, then the highlighted one
+    for idx = 1, #self.sigs do
+      if idx ~= self.hover then
+        self:draw_channel(g, idx, false)
+      end
+    end
+    if self.hover <= #self.sigs then
+      self:draw_channel(g, self.hover, true)
+    end
+  end
 end
 
 function show:paint_layer_3(g)
-    -- Legend: range text, channel if hovered, and scale
-    g:set_color(0, 0, 0)
-    g:draw_text(string.format("% 8.1f", self.max), self.graphWidth-50, 3, 50, 10)
+  -- Draw interval information
+  local intervalText = string.format("1px = %dsp", self.interval)
+  if self.hoverInterval or self.dragStart then
+    g:set_color(220, 220, 220)  -- Light gray background for hover
+    g:fill_rect(self.intervalRect.x, self.intervalRect.y, self.intervalRect.width, self.intervalRect.height)
+  end
+  -- Legend: range text, channel if hovered, and scale
+  g:set_color(0, 0, 0)
+  g:draw_text(string.format("% 8.2f", self.displayMax), self.graphWidth-50, 3, 50, 10)
+  g:draw_text(string.format("% 8.2f", -self.displayMax), self.graphWidth-50, self.height-13, 50, 10)
 
-    -- Draw interval information
-    local intervalText = string.format("1px = %dsp", self.interval)
-    if self.hoverInterval or self.dragStart then
-        g:set_color(220, 220, 220)  -- Light gray background for hover
-        g:fill_rect(self.intervalRect.x, self.intervalRect.y, self.intervalRect.width, self.intervalRect.height)
-    end
-    g:set_color(0, 0, 0)  -- Black text
-    g:draw_text(intervalText, self.intervalRect.x + 2, self.intervalRect.y + 2, self.intervalRect.width, 10)
-
-    -- Draw lower vertical value legend in front of the interval rectangle
-    g:set_color(0, 0, 0)
-    g:draw_text(string.format("% 8.1f", -self.max), self.graphWidth-50, self.height-13, 50, 10)
-
-    -- Draw hovered channel number
-    if self.hover > 0 and self.hover <= #self.sigs then
-        g:set_color(table.unpack(self.colors[self.hover] or {0, 0, 0}))
-        g:draw_text(string.format("ch %d", self.hover), 3, 3, 64, 10)
-    end
+  -- Draw hovered channel number
+  if self.hover > 0 and self.hover <= #self.sigs then
+    g:set_color(table.unpack(self.colors[self.hover] or {0, 0, 0}))
+    g:draw_text(string.format("ch %d", self.hover), 3, 3, 64, 10)
+  end
 end
 
 function show:draw_channel(g, idx, isHovered)
-    local sig = self.sigs[idx]
-    if not sig then return end  -- Skip drawing if the signal doesn't exist
+  local sig = self.sigs[idx]
+  if not sig then return end  -- Skip drawing if the signal doesn't exist
 
-    local color = self.colors[idx] or {255, 255, 255}  -- Default to white if color is not set
-    local graphColor = (self.hover == 0 or isHovered) and color or {192, 192, 192}
-    
-    -- RMS bar
-    g:set_color(table.unpack(isHovered and {180, 180, 180} or {216, 216, 216}))
-    g:fill_rect(self.graphWidth, self.sigHeight * (idx-1) + 1, self.valWidth*math.min(1, self.rms[idx] or 0), self.sigHeight-1)
-    
-    -- Graph line
-    g:set_color(table.unpack(graphColor))
-    
-    local function scaleY(value)
-        -- Scale the value to fit within the height, leaving 1px margin at top and bottom
-        local scaledY = (value / self.max * -0.5 + 0.5) * (self.height - 2) + 1
-        return math.max(1, math.min(self.height - 1, scaledY))
-    end
-    
-    local x0 = (self.bufferIndex - 1) % self.graphWidth
-    local y0 = scaleY(sig[x0 + 1] or 0)
-    local p = Path(0, y0)
-    
-    for x = 1, self.graphWidth - 2 do  -- Changed to self.graphWidth - 2
-        local bufferX = (x0 + x) % self.graphWidth + 1
-        local y = scaleY(sig[bufferX] or 0)
-        p:line_to(x, y)
-    end
-    
-    g:stroke_path(p, self.strokeWidth)
-    
-    -- Average value text
-    g:set_color(table.unpack((self.hover == 0 or isHovered) and color or {144, 144, 144}))
-    g:draw_text(string.format("% 7.2f", self.avgs[idx] or 0), self.graphWidth + 4, idx * self.sigHeight - 13, self.valWidth, 10)
+  local color = self.colors[idx] or {255, 255, 255}  -- Default to white if color is not set
+  local graphColor = (self.hover == 0 or isHovered) and color or {192, 192, 192}
+  
+  -- RMS bar
+  g:set_color(table.unpack(isHovered and {180, 180, 180} or {216, 216, 216}))
+  g:fill_rect(self.graphWidth, self.sigHeight * (idx-1) + 1, self.valWidth*math.min(1, self.rms[idx] or 0), self.sigHeight-1)
+  
+  -- Graph line
+  g:set_color(table.unpack(graphColor))
+  
+  local function scaleY(value)
+    -- Scale the value to fit within the height, leaving 1px margin at top and bottom
+    local scaledY = (value / self.displayMax * -0.5 + 0.5) * (self.height - 2) + 1
+    return math.max(1, math.min(self.height - 1, scaledY))
+  end
+
+  local x0 = (self.bufferIndex - 1) % self.graphWidth
+  local y0 = scaleY(sig[x0 + 1] or 0)
+  local p = Path(0, y0)
+  
+  for x = 1, self.graphWidth - 2 do  -- Changed to self.graphWidth - 2
+    local bufferX = (x0 + x) % self.graphWidth + 1
+    local y = scaleY(sig[bufferX] or 0)
+    p:line_to(x, y)
+  end
+  
+  g:stroke_path(p, self.strokeWidth)
+  
+  -- Average value text
+  g:set_color(table.unpack((self.hover == 0 or isHovered) and color or {144, 144, 144}))
+  g:draw_text(string.format("% 7.2f", self.avgs[idx] or 0), self.graphWidth + 4, idx * self.sigHeight - 13, self.valWidth, 10)
 end
 
 function show:dsp(samplerate, blocksize, inchans)
