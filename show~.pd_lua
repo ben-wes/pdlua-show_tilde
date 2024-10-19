@@ -30,9 +30,10 @@ end
 function show:reset()
   self.sampleIndex = 1
   self.bufferIndex = 1
-  self.sigs = { {0} }
+  self.sigs = {}
   self.avgs = {}
   self.rms = {}
+  self.inchans = 0
   self.interval = 1
   self.frameDelay = 20
   self.strokeWidth = 1
@@ -41,13 +42,13 @@ function show:reset()
   self.sigHeight = 16
   self.hover = 0
   self.max = 1
-  self.displayMax = 1
   self.maxVal = 1
   self.width = self.graphWidth + self.valWidth
   self.height = 140
   self:set_size(self.graphWidth + self.valWidth, self.height)
   self.dragStart = nil
   self.dragStartInterval = nil
+  self.hoverGraph = false
   self.hoverInterval = false
   self.needsRepaintBackground = true
   self.needsRepaintLegend = true
@@ -67,49 +68,54 @@ end
 
 function show:update_layout()
   self.intervalRect = {x = 1, y = self.height - 15, width = self.graphWidth - 1, height = 15}
+  self.graphRect = {x = 0, y = self.height/2, width = self.graphWidth, height = self.height/2 - 15}
   self.channelRect = {x = self.graphWidth, y = 0, width = self.valWidth, height = self.height}
   self:set_size(self.graphWidth + self.valWidth, self.height)
 end
 
 function show:in_1_size(x)
-    self.graphWidth, self.height = x[1], x[2]
-    self:update_layout()
-    self.needsRepaintBackground = true
-    self.needsRepaintLegend = true
+  self.graphWidth, self.height = x[1], x[2]
+  self:update_layout()
+  self.needsRepaintBackground = true
+  self.needsRepaintLegend = true
 end
 
 function show:in_1_width(x)
-    self.graphWidth = x[1] or self.graphWidth
-    self:update_layout()
-    self.needsRepaintBackground = true
-    self.needsRepaintLegend = true
+  self.graphWidth = x[1] or self.graphWidth
+  self:update_layout()
+  self.needsRepaintBackground = true
+  self.needsRepaintLegend = true
 end
 
 function show:mouse_move(x, y)
-    local oldHover = self.hover
-    if self:point_in_rect(x, y, self.channelRect) then
-        self.hover = math.min(math.floor((y - self.channelRect.y) / self.sigHeight) + 1, self.inchans or 0)
-    else 
-        self.hover = 0
-    end
+  local oldHover = self.hover
+  if self:point_in_rect(x, y, self.channelRect) then
+    self.hover = math.max(0, math.floor((y - self.channelRect.y) / self.sigHeight) + 1)
+    if self.hover > self.inchans then self.hover = 0 end
+  else
+    self.hover = 0
+  end
 
-    local oldHoverInterval = self.hoverInterval
-    self.hoverInterval = self:point_in_rect(x, y, self.intervalRect)
+  local oldHoverInterval = self.hoverInterval
+  local oldHoverGraph = self.hoverGraph
+  
+  self.hoverGraph = self:point_in_rect(x, y, self.graphRect)
+  self.hoverInterval = self:point_in_rect(x, y, self.intervalRect)
 
-    if oldHover ~= self.hover or oldHoverInterval ~= self.hoverInterval then
-        self.needsRepaintLegend = true
-    end
+  if oldHover ~= self.hover or oldHoverInterval ~= self.hoverInterval or oldHoverGraph ~= self.hoverGraph then
+    self.needsRepaintLegend = true
+  end
 end
 
 function show:mouse_drag(x, y)
-    if self.dragStart then
-        local dx = x - self.dragStart
-        local scaleFactor = 0.05  -- Increased sensitivity
-        local newInterval = math.max(1, math.floor(self.dragStartInterval * math.exp(dx * scaleFactor)))
-        if newInterval ~= self.interval then
-            self:in_1_interval({newInterval})
-        end
+  if self.dragStart then
+    local dx = x - self.dragStart
+    local scaleFactor = 0.05  -- Increased sensitivity
+    local newInterval = math.max(1, math.floor(self.dragStartInterval * math.exp(dx * scaleFactor)))
+    if newInterval ~= self.interval then
+      self:in_1_interval({newInterval})
     end
+  end
 end
 
 function show:mouse_down(x, y)
@@ -173,14 +179,11 @@ function show:perform(in1)
   self.maxVal = self.maxVal * 0.998
 
   -- Calculate target max value
-  local targetMax = self:getrange(math.max(self.maxVal, 1))  -- Ensure minimum of 1
+  local targetMax = self:getrange(self.maxVal)
   
   -- Smooth transition of max value
-  local transitionSpeed = 0.05  -- Adjust this value to control transition speed
+  local transitionSpeed = 0.02  -- Adjust this value to control transition speed
   self.max = self.max + (targetMax - self.max) * transitionSpeed
-
-  -- Smooth transition of display max
-  self.displayMax = self.displayMax + (self.max - self.displayMax) * transitionSpeed
 
   while self.sampleIndex <= self.blocksize do
     -- ring buffer
@@ -194,8 +197,9 @@ function show:perform(in1)
   -- sampleIndex is the index where we start reading from the next sample block
   self.sampleIndex = self.sampleIndex - self.blocksize
   
-  -- Trigger legend repaint on every frame for smooth transitions
-  self.needsRepaintLegend = true
+  if self.max ~= targetMax then
+    self.needsRepaintLegend = true
+  end
 end
 
 function show:paint(g)
@@ -229,16 +233,21 @@ end
 
 function show:paint_layer_3(g)
   -- Draw interval hover
-  if self.hoverInterval or self.dragStart then
-    g:set_color(220, 220, 220)  -- Light gray background for hover
+  if self.hoverGraph or self.hoverInterval or self.dragStart then
+    if self.hoverInterval or self.dragStart then
+      g:set_color(200, 200, 200)  -- Darker gray for direct hover or dragging
+    else
+      g:set_color(230, 230, 230)  -- Light gray for graph area hover
+    end
     g:fill_rect(self.intervalRect.x, self.intervalRect.y, self.intervalRect.width, self.intervalRect.height)
   end
+  
   -- Legend: range text, channel if hovered, and scale
   local intervalText = string.format("1px = %dsp", self.interval)
   g:set_color(0, 0, 0)
   g:draw_text(intervalText, 3, self.height-13, 100, 10)
-  g:draw_text(string.format("% 8.2f", self.displayMax), self.graphWidth-50, 3, 50, 10)
-  g:draw_text(string.format("% 8.2f", -self.displayMax), self.graphWidth-50, self.height-13, 50, 10)
+  g:draw_text(string.format("% 8.2f", self.max), self.graphWidth-50, 3, 50, 10)
+  g:draw_text(string.format("% 8.2f", -self.max), self.graphWidth-50, self.height-13, 50, 10)
 
   -- Draw hovered channel number
   if self.hover > 0 and self.hover <= #self.sigs then
@@ -263,7 +272,7 @@ function show:draw_channel(g, idx, isHovered)
   
   local function scaleY(value)
     -- Scale the value to fit within the height, leaving 1px margin at top and bottom
-    local scaledY = (value / self.displayMax * -0.5 + 0.5) * (self.height - 2) + 1
+    local scaledY = (value / self.max * -0.5 + 0.5) * (self.height - 2) + 1
     return math.max(1, math.min(self.height - 1, scaledY))
   end
 
