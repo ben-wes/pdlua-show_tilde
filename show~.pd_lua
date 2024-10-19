@@ -205,9 +205,9 @@ function show:paint(g)
 end
 
 function show:paint_layer_2(g)
-  -- Graphs, RMS charts, and avg values
   g:set_color(200, 200, 200)
   g:draw_line(0, self.height/2, self.graphWidth - 1, self.height/2, 1)
+  -- Graphs, RMS charts, and avg values
 
   if self.hover == 0 then
     -- No channel highlighted: draw in reverse order
@@ -228,14 +228,15 @@ function show:paint_layer_2(g)
 end
 
 function show:paint_layer_3(g)
-  -- Draw interval information
-  local intervalText = string.format("1px = %dsp", self.interval)
+  -- Draw interval hover
   if self.hoverInterval or self.dragStart then
     g:set_color(220, 220, 220)  -- Light gray background for hover
     g:fill_rect(self.intervalRect.x, self.intervalRect.y, self.intervalRect.width, self.intervalRect.height)
   end
   -- Legend: range text, channel if hovered, and scale
+  local intervalText = string.format("1px = %dsp", self.interval)
   g:set_color(0, 0, 0)
+  g:draw_text(intervalText, 3, self.height-13, 100, 10)
   g:draw_text(string.format("% 8.2f", self.displayMax), self.graphWidth-50, 3, 50, 10)
   g:draw_text(string.format("% 8.2f", -self.displayMax), self.graphWidth-50, self.height-13, 50, 10)
 
