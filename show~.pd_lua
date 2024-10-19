@@ -170,7 +170,7 @@ function show:perform(in1)
   end
   
   -- Gradual decay of maxVal
-  self.maxVal = self.maxVal * 0.999
+  self.maxVal = self.maxVal * 0.998
 
   -- Calculate target max value
   local targetMax = self:getrange(math.max(self.maxVal, 1))  -- Ensure minimum of 1
@@ -340,9 +340,9 @@ end
 
 function show:generate_colors(count)
   local colors = {}
-  local hue_start, hue_end = 250, 160
-  local saturation = 80
-  local brightness_start, brightness_end = 80, 60
+  local hue_start, hue_end = 210, 340
+  local saturation = 90
+  local brightness_start, brightness_end = 70, 80
 
   for i = 1, count do
     local hue = hue_start + (hue_end - hue_start) * ((i - 1) / math.max(1, count - 1))
