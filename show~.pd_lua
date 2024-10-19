@@ -3,25 +3,9 @@ local show = pd.Class:new():register("show~")
 function show:initialize(sel, atoms)
   self.inlets = {SIGNAL}
   self:reset()
-  self.colors = {
-    {0, 0, 0},
-    {31, 119, 180},   -- Steel Blue
-    {214, 39, 40},    -- Brick Red
-    {44, 160, 44},    -- Cooked Asparagus Green
-    {148, 103, 189},  -- Muted Purple
-    {255, 127, 14},   -- Safety Orange
-    {140, 86, 75},    -- Chestnut Brown
-    {227, 119, 194},  -- Medium Pink
-    {127, 127, 127},  -- Medium Gray
-    {188, 189, 34},   -- Olive Green
-    {23, 190, 207},   -- Cyan
-    {158, 218, 229},  -- Light Blue
-    {199, 199, 199},  -- Light Gray
-    {219, 219, 141},  -- Pale Yellow
-    {255, 187, 120},  -- Light Orange
-    {152, 223, 138},  -- Light Green
-    {255, 152, 150}   -- Light Red
-  }
+  self.colors = {}
+  self.needsRepaintBackground = true
+  self.needsRepaintLegend = true
   return true
 end
 
@@ -31,15 +15,22 @@ function show:postinitialize()
 end
 
 function show:tick()
-  self:repaint()
-  -- pd.post("draw")
+  if self.needsRepaintBackground then
+    self:repaint(1)
+    self.needsRepaintBackground = false
+  end
+  self:repaint(2)  -- Always repaint the graphs (layer 2)
+  if self.needsRepaintLegend then
+    self:repaint(3)
+    self.needsRepaintLegend = false
+  end
   self.clock:delay(self.frameDelay)
 end
 
 function show:reset()
   self.sampleIndex = 1
   self.bufferIndex = 1
-  self.sigs = { {} }
+  self.sigs = { {0} }
   self.avgs = {}
   self.rms = {}
   self.interval = 1
@@ -50,64 +41,121 @@ function show:reset()
   self.sigHeight = 16
   self.hover = 0
   self.max = 1
-  self.maxVal = 0
+  self.maxVal = 1
   self.width = self.graphWidth + self.valWidth
   self.height = 140
   self:set_size(self.graphWidth + self.valWidth, self.height)
-  -- self.colors = {{}}
+  self.dragStart = nil
+  self.dragStartInterval = nil
+  self.hoverInterval = false
+  self.needsRepaintBackground = true
+  self.needsRepaintLegend = true
+  self:update_layout()
 end
 
 function show:in_1_reset()
   self.reset()
+end
+
+function show:get_channel_from_point(x, y)
+  if self:point_in_rect(x, y, self.channelRect) then
+    return math.floor(y / self.sigHeight) + 1
+  end
+  return 0
+end
+
+function show:update_layout()
+  self.intervalRect = {x = 1, y = self.height - 15, width = self.graphWidth - 1, height = 15}
+  self.channelRect = {x = self.graphWidth, y = 0, width = self.valWidth, height = self.height}
+  self:set_size(self.graphWidth + self.valWidth, self.height)
 end
 
 function show:in_1_size(x)
-  self.width, self.height = x[1], x[2]
-  self:set_size(x[1], x[2])
+    self.graphWidth, self.height = x[1], x[2]
+    self:update_layout()
+    self.needsRepaintBackground = true
+    self.needsRepaintLegend = true
+end
+
+function show:in_1_width(x)
+    self.graphWidth = x[1] or self.graphWidth
+    self:update_layout()
+    self.needsRepaintBackground = true
+    self.needsRepaintLegend = true
+end
+
+function show:mouse_move(x, y)
+    local oldHover = self.hover
+    if self:point_in_rect(x, y, self.channelRect) then
+        self.hover = math.min(math.floor((y - self.channelRect.y) / self.sigHeight) + 1, self.inchans or 0)
+    else 
+        self.hover = 0
+    end
+
+    local oldHoverInterval = self.hoverInterval
+    self.hoverInterval = self:point_in_rect(x, y, self.intervalRect)
+
+    if oldHover ~= self.hover or oldHoverInterval ~= self.hoverInterval then
+        self.needsRepaintLegend = true
+    end
+end
+
+function show:mouse_drag(x, y)
+    if self.dragStart then
+        local dx = x - self.dragStart
+        local scaleFactor = 0.05  -- Increased sensitivity
+        local newInterval = math.max(1, math.floor(self.dragStartInterval * math.exp(dx * scaleFactor)))
+        if newInterval ~= self.interval then
+            self:in_1_interval({newInterval})
+        end
+    end
+end
+
+function show:mouse_down(x, y)
+  if self.hoverInterval then
+    self.dragStart = x
+    self.dragStartInterval = self.interval
+  end
+end
+
+function show:mouse_up(x, y)
+  self.dragStart = nil
+  self.dragStartInterval = nil
+end
+
+function show:point_in_rect(x, y, rect)
+  return x >= rect.x and x <= rect.x + rect.width and
+         y >= rect.y and y <= rect.y + rect.height
 end
 
 function show:in_1_interval(x)
-  self.interval = math.max(1, math.floor(x[1]) or 1)
+  self.interval = math.max(1, math.floor(x[1] or 1))
+  self.needsRepaintLegend = true
 end
 
 function show:in_1_reset()
   self.reset()
 end
 
-function show:dsp(samplerate, blocksize, inchans)
-  -- pd.post(string.format("samplerate %d, blocksize %d, inchans %d", samplerate, blocksize, table.unpack(inchans)))
-  self.blocksize = blocksize
-  self.inchans = inchans[1]
-  self.sigs = {}
-  self.height = self.inchans * self.sigHeight
-  self.height = math.max(140, self.height)
-  self:set_size(self.graphWidth + self.valWidth, self.height)
-  for c = 1, self.inchans do
-    self.rms[c] = 0
-    self.avgs[c] = 0
-    self.sigs[c] = self.sigs[c] or {}
-  end
-end
-
 function show:getrange(maxValue)
-    local baseValues = {1, 2, 5, 10}
-    
-    -- Find the appropriate power of 10
-    local power = math.max(-1, math.floor(math.log(maxValue, 10)))
-    local scale = 10^power
-    
-    -- Normalize the maxValue to between 0 and 10
-    local normalizedValue = maxValue / scale
-    
-    -- Find the first base value that's greater than or equal to the normalized value
-    for _, base in ipairs(baseValues) do
-        if base >= normalizedValue then
-            return base * scale
-        end
+  local baseValues = {1, 2, 5, 10}
+  
+  -- Find the appropriate power of 10
+  local power = math.max(0, math.floor(math.log(maxValue, 10)))
+  local scale = 10^power
+  
+  -- Normalize the maxValue to between 0 and 10
+  local normalizedValue = maxValue / scale
+  
+  -- Find the first base value that's greater than or equal to the normalized value
+  for _, base in ipairs(baseValues) do
+    if base >= normalizedValue then
+      return base * scale
     end
-    
-    -- If we get here, normalizedValue must be 10, so we return the next scale up
-    return baseValues[1] * (scale * 10)
+  end
+  
+  -- If we get here, normalizedValue must be 10, so we return the next scale up
+  return baseValues[1] * (scale * 10)
 end
 
 function show:perform(in1)
@@ -135,49 +183,170 @@ function show:perform(in1)
   end
   -- sampleIndex is the index where we start reading from the next sample block
   self.sampleIndex = self.sampleIndex - self.blocksize
-end
-
-function show:mouse_move(x, y)
-   -- 0 for no hover, otherwise signal index
-  if x >= self.graphWidth and x <= self.width then
-    self.hover = math.min(y // self.sigHeight + 1, self.inchans or 0)
-  else 
-    self.hover = 0
+  local oldMax = self.max
+  self.max = self.max * 0.95 + self:getrange(self.maxVal) * 0.05
+  if oldMax ~= self.max then
+    self.needsRepaintLegend = true
   end
 end
 
 function show:paint(g)
-  g:set_color(248, 248, 248)
-  g:fill_all()
-  g:set_color(200, 200, 200)
-  g:draw_line(0, self.height/2, self.graphWidth, self.height/2, 1)
-  for idx=1, #self.sigs do
-    local i = (self.hover + idx - 1) % #self.sigs + 1
-    local sig = self.sigs[i] 
-    local markthis = i == self.hover -- true if index should be marked
-    local color = self.hover == 0 and self.colors[i] or (markthis and {0, 0, 0} or {192, 192, 192})
-    if markthis then
-      g:set_color(table.unpack(color))
-      g:draw_text(string.format("ch %d", i), 3, 3, 64, 10);
+    -- Background
+    g:set_color(248, 248, 248)
+    g:fill_all()
+end
+
+function show:paint_layer_2(g)
+    -- Graphs, RMS charts, and avg values
+    g:set_color(200, 200, 200)
+    g:draw_line(0, self.height/2, self.graphWidth - 1, self.height/2, 1)
+
+    if self.hover == 0 then
+        -- No channel highlighted: draw in reverse order
+        for idx = #self.sigs, 1, -1 do
+            self:draw_channel(g, idx, false)
+        end
+    else
+        -- Channel highlighted: draw non-highlighted channels first, then the highlighted one
+        for idx = 1, #self.sigs do
+            if idx ~= self.hover then
+                self:draw_channel(g, idx, false)
+            end
+        end
+        if self.hover <= #self.sigs then
+            self:draw_channel(g, self.hover, true)
+        end
     end
-    g:set_color(table.unpack(markthis and {180, 180, 180} or {216, 216, 216}))
-    g:fill_rect(self.graphWidth, self.sigHeight * (i-1) + 1, self.valWidth*math.min(1, self.rms[i] or 0), self.sigHeight-1)
-    g:set_color(table.unpack(color or {216, 216, 216}))
-    local y = (sig[(self.bufferIndex-1) % self.graphWidth + 1] or 0) / self.max * -self.height/2 + self.height/2
-    local p = Path(0, y)
-    for x = 1, self.graphWidth-1 do
-      y = (sig[(self.bufferIndex-1 + x) % self.graphWidth + 1] or 0) / self.max * -self.height/2 + self.height/2
-      p:line_to(x, y)
+end
+
+function show:paint_layer_3(g)
+    -- Legend: range text, channel if hovered, and scale
+    g:set_color(0, 0, 0)
+    g:draw_text(string.format("% 8.1f", self.max), self.graphWidth-50, 3, 50, 10)
+
+    -- Draw interval information
+    local intervalText = string.format("1px = %dsp", self.interval)
+    if self.hoverInterval or self.dragStart then
+        g:set_color(220, 220, 220)  -- Light gray background for hover
+        g:fill_rect(self.intervalRect.x, self.intervalRect.y, self.intervalRect.width, self.intervalRect.height)
     end
+    g:set_color(0, 0, 0)  -- Black text
+    g:draw_text(intervalText, self.intervalRect.x + 2, self.intervalRect.y + 2, self.intervalRect.width, 10)
+
+    -- Draw lower vertical value legend in front of the interval rectangle
+    g:set_color(0, 0, 0)
+    g:draw_text(string.format("% 8.1f", -self.max), self.graphWidth-50, self.height-13, 50, 10)
+
+    -- Draw hovered channel number
+    if self.hover > 0 and self.hover <= #self.sigs then
+        g:set_color(table.unpack(self.colors[self.hover] or {0, 0, 0}))
+        g:draw_text(string.format("ch %d", self.hover), 3, 3, 64, 10)
+    end
+end
+
+function show:draw_channel(g, idx, isHovered)
+    local sig = self.sigs[idx]
+    if not sig then return end  -- Skip drawing if the signal doesn't exist
+
+    local color = self.colors[idx] or {255, 255, 255}  -- Default to white if color is not set
+    local graphColor = (self.hover == 0 or isHovered) and color or {192, 192, 192}
+    
+    -- RMS bar
+    g:set_color(table.unpack(isHovered and {180, 180, 180} or {216, 216, 216}))
+    g:fill_rect(self.graphWidth, self.sigHeight * (idx-1) + 1, self.valWidth*math.min(1, self.rms[idx] or 0), self.sigHeight-1)
+    
+    -- Graph line
+    g:set_color(table.unpack(graphColor))
+    
+    local function scaleY(value)
+        -- Scale the value to fit within the height, leaving 1px margin at top and bottom
+        local scaledY = (value / self.max * -0.5 + 0.5) * (self.height - 2) + 1
+        return math.max(1, math.min(self.height - 1, scaledY))
+    end
+    
+    local x0 = (self.bufferIndex - 1) % self.graphWidth
+    local y0 = scaleY(sig[x0 + 1] or 0)
+    local p = Path(0, y0)
+    
+    for x = 1, self.graphWidth - 2 do  -- Changed to self.graphWidth - 2
+        local bufferX = (x0 + x) % self.graphWidth + 1
+        local y = scaleY(sig[bufferX] or 0)
+        p:line_to(x, y)
+    end
+    
     g:stroke_path(p, self.strokeWidth)
-    color = self.hover == 0 and self.colors[i] or (markthis and {0, 0, 0} or {144, 144, 144})
-    g:set_color(table.unpack(color))
-    g:draw_text(string.format("% 7.2f", self.avgs[i] or 0), self.graphWidth + 4, i * self.sigHeight - 13, self.graphWidth, 10);
+    
+    -- Average value text
+    g:set_color(table.unpack((self.hover == 0 or isHovered) and color or {144, 144, 144}))
+    g:draw_text(string.format("% 7.2f", self.avgs[idx] or 0), self.graphWidth + 4, idx * self.sigHeight - 13, self.valWidth, 10)
+end
+
+function show:dsp(samplerate, blocksize, inchans)
+  -- pd.post(string.format("samplerate %d, blocksize %d, inchans %d", samplerate, blocksize, table.unpack(inchans)))
+  self.blocksize = blocksize
+  self.inchans = inchans[1]
+  self.sigs = {}
+  self.height = self.inchans * self.sigHeight
+  self.height = math.max(140, self.height)
+
+  self.needsRepaintBackground = true
+  self.needsRepaintLegend = true
+  self:update_layout()  -- Update overlay and hover areas
+
+  self.colors = self:generate_colors(self.inchans)
+ 
+  for c = 1, self.inchans do
+    self.rms[c] = 0
+    self.avgs[c] = 0
+    self.sigs[c] = {}  -- Initialize an empty table for each channel
   end
-  g:set_color(0, 0, 0)
-  -- g:stroke_rect(0, 0, self.graphWidth, self.height, 1)
-  g:draw_text(string.format("% 8.1f", self.max), self.graphWidth-50, 3, 50, 10);
-  -- g:draw_text(" 0.0", self.graphWidth-26, self.height/2-5, 24, 10);
-  g:draw_text(string.format("% 8.1f", -self.max), self.graphWidth-50, self.height-12, 50, 10);
-  g:draw_text(string.format("1px = %dsp", self.interval), 2, self.height-12, 70, 10);
+  
+  -- Reset hover state when channel count changes
+  self.hover = 0
+end
+
+function show:hsv_to_rgb(h, s, v)
+  h = h % 360  -- Ensure h is in the range 0-359
+  s = s / 100  -- Convert s to 0-1 range
+  v = v / 100  -- Convert v to 0-1 range
+
+  local c = v * s
+  local x = c * (1 - math.abs((h / 60) % 2 - 1))
+  local m = v - c
+
+  local r, g, b
+  if h < 60 then
+    r, g, b = c, x, 0
+  elseif h < 120 then
+    r, g, b = x, c, 0
+  elseif h < 180 then
+    r, g, b = 0, c, x
+  elseif h < 240 then
+    r, g, b = 0, x, c
+  elseif h < 300 then
+    r, g, b = x, 0, c
+  else
+    r, g, b = c, 0, x
+  end
+
+  -- Scale to 0-255 range and round to nearest integer
+  return math.floor((r + m) * 255 + 0.5), 
+         math.floor((g + m) * 255 + 0.5), 
+         math.floor((b + m) * 255 + 0.5)
+end
+
+function show:generate_colors(count)
+  local colors = {}
+  local hue_start, hue_end = 250, 160
+  local saturation = 80
+  local brightness_start, brightness_end = 80, 60
+
+  for i = 1, count do
+    local hue = hue_start + (hue_end - hue_start) * ((i - 1) / math.max(1, count - 1))
+    local brightness = brightness_start + (brightness_end - brightness_start) * ((i - 1) / math.max(1, count - 1))
+    local r, g, b = self:hsv_to_rgb(hue, saturation, brightness)
+    table.insert(colors, {r, g, b})
+  end
+
+  return colors
 end
