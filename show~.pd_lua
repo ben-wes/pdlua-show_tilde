@@ -2,6 +2,7 @@ local show = pd.Class:new():register("show~")
 
 function show:initialize(sel, atoms)
   self.inlets = {SIGNAL}
+  self.graphWidth = math.max(math.floor(atoms[1] or 152), 96)
   self:reset()
   self.colors = {}
   self.needsRepaintBackground = true
@@ -37,7 +38,6 @@ function show:reset()
   self.interval = 1
   self.frameDelay = 20
   self.strokeWidth = 1
-  self.graphWidth = 152
   self.valWidth = 48
   self.sigHeight = 16
   self.hover = 0
@@ -73,16 +73,13 @@ function show:update_layout()
   self:set_size(self.graphWidth + self.valWidth, self.height)
 end
 
-function show:in_1_size(x)
-  self.graphWidth, self.height = x[1], x[2]
-  self:update_layout()
-  self.needsRepaintBackground = true
-  self.needsRepaintLegend = true
-end
-
 function show:in_1_width(x)
-  self.graphWidth = x[1] or self.graphWidth
+  self.graphWidth = math.max(math.floor(x[1] or 152), 96)
+  self:set_args({self.graphWidth})
   self:update_layout()
+  for i=1, self.inchans do
+    self.sigs[i] = {}
+  end
   self.needsRepaintBackground = true
   self.needsRepaintLegend = true
 end
