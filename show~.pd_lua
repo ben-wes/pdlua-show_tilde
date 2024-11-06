@@ -1,12 +1,21 @@
 local show = pd.Class:new():register("show~")
 
-function show:initialize(sel, atoms)
+function show:initialize(sel, args)
   self.inlets = {SIGNAL}
-  self.graphWidth = math.max(math.floor(atoms[1] or 152), 96)
+  self.outlets = {DATA}
+  self.graphWidth = 152
   self:reset()
   self.colors = {}
   self.needsRepaintBackground = true
   self.needsRepaintLegend = true
+  self.scale = nil
+  for i, arg in ipairs(args) do
+    if arg == "-scale" then
+      self.scale = type(args[i+1]) == "number" and args[i+1] or 1
+    elseif arg == "-width" then
+      selfmath.max(math.floor(args[i+1] or 152), 96)
+    end
+  end
   return true
 end
 
@@ -137,8 +146,20 @@ function show:in_1_interval(x)
   self.needsRepaintLegend = true
 end
 
+function show:in_1_scale(x)
+  self.scale = x[1]
+end
+
 function show:in_1_reset()
   self.reset()
+end
+
+function show:in_1_bang()
+  local output = {}
+  for i=1,self.inchans do
+    output[i] = self.sigs[i][1]
+  end
+  self:outlet(1, "list", output)
 end
 
 function show:getrange(maxValue)
@@ -172,16 +193,6 @@ function show:perform(in1)
     end
   end
   
-  -- Gradual decay of maxVal
-  self.maxVal = self.maxVal * 0.998
-
-  -- Calculate target max value
-  local targetMax = self:getrange(self.maxVal)
-  
-  -- Smooth transition of max value
-  local transitionSpeed = 0.02  -- Adjust this value to control transition speed
-  self.max = self.max + (targetMax - self.max) * transitionSpeed
-
   while self.sampleIndex <= self.blocksize do
     -- ring buffer
     for i=1,self.inchans do
@@ -194,6 +205,16 @@ function show:perform(in1)
   -- sampleIndex is the index where we start reading from the next sample block
   self.sampleIndex = self.sampleIndex - self.blocksize
   
+  -- Gradual decay of maxVal
+  self.maxVal = self.maxVal * 0.99
+
+  -- Calculate target max value
+  local targetMax = self.scale or self:getrange(self.maxVal)
+  
+  -- Smooth transition of max value
+  local transitionSpeed = 0.02  -- Adjust this value to control transition speed
+  self.max = self.max + (targetMax - self.max) * transitionSpeed
+
   if self.max ~= targetMax then
     self.needsRepaintLegend = true
   end
@@ -270,7 +291,7 @@ function show:draw_channel(g, idx, isHovered)
   local function scaleY(value)
     -- Scale the value to fit within the height, leaving 1px margin at top and bottom
     local scaledY = (value / self.max * -0.5 + 0.5) * (self.height - 2) + 1
-    return math.max(1, math.min(self.height - 1, scaledY))
+    return scaledY -- math.max(1, math.min(self.height - 1, scaledY)) -- FIXME: clip?
   end
 
   local x0 = (self.bufferIndex - 1) % self.graphWidth
