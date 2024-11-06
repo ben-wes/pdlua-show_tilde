@@ -156,8 +156,8 @@ end
 
 function show:in_1_bang()
   local output = {}
-  for i=1,self.inchans do
-    output[i] = self.sigs[i][1]
+  for i = 1, self.inchans do
+    output[i] = self.sigs[i][(self.bufferIndex - 2) % self.graphWidth + 1]
   end
   self:outlet(1, "list", output)
 end
@@ -290,8 +290,8 @@ function show:draw_channel(g, idx, isHovered)
   
   local function scaleY(value)
     -- Scale the value to fit within the height, leaving 1px margin at top and bottom
-    local scaledY = (value / self.max * -0.5 + 0.5) * (self.height - 2) + 1
-    return scaledY -- math.max(1, math.min(self.height - 1, scaledY)) -- FIXME: clip?
+    return (value / self.max * -0.5 + 0.5) * (self.height - 2) + 1
+    -- return scaledY -- math.max(1, math.min(self.height - 1, scaledY)) -- FIXME: clip?
   end
 
   local x0 = (self.bufferIndex - 1) % self.graphWidth
