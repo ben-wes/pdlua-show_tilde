@@ -4,7 +4,7 @@ function show:initialize(sel, args)
   self.inlets = {SIGNAL}
   self.outlets = {DATA}
   self.graphWidth = 152
-  self:reset()
+  self.interval = 1
   self.colors = {}
   self.needsRepaintBackground = true
   self.needsRepaintLegend = true
@@ -13,9 +13,12 @@ function show:initialize(sel, args)
     if arg == "-scale" then
       self.scale = type(args[i+1]) == "number" and args[i+1] or 1
     elseif arg == "-width" then
-      selfmath.max(math.floor(args[i+1] or 152), 96)
+      self.graphWidth = math.max(math.floor(args[i+1] or 152), 96)
+    elseif arg == "-interval" then
+      self.interval = math.abs(args[i+1] or 1)
     end
   end
+  self:reset()
   return true
 end
 
@@ -44,7 +47,6 @@ function show:reset()
   self.avgs = {}
   self.rms = {}
   self.inchans = 0
-  self.interval = 1
   self.frameDelay = 20
   self.strokeWidth = 1
   self.valWidth = 48
@@ -54,7 +56,6 @@ function show:reset()
   self.maxVal = 1
   self.width = self.graphWidth + self.valWidth
   self.height = 140
-  self:set_size(self.graphWidth + self.valWidth, self.height)
   self.dragStart = nil
   self.dragStartInterval = nil
   self.hoverGraph = false
@@ -116,7 +117,7 @@ end
 function show:mouse_drag(x, y)
   if self.dragStart then
     local dx = x - self.dragStart
-    local scaleFactor = 0.05  -- Increased sensitivity
+    local scaleFactor = 0.05
     local newInterval = math.max(1, math.floor(self.dragStartInterval * math.exp(dx * scaleFactor)))
     if newInterval ~= self.interval then
       self:in_1_interval({newInterval})
