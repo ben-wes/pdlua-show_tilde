@@ -93,7 +93,6 @@ function show:get_channel_from_point(x, y)
 end
 
 function show:update_layout()
-  pd.post(self.graphHeight)
   self.height = (self.graphHeight > 0) and self.graphHeight or self.inchans * self.sigHeight
   self.height = math.max(140, self.height)
   self.intervalRect = {x = 1, y = self.height - 15, width = self.graphWidth - 1, height = 15}
