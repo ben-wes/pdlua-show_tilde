@@ -75,9 +75,6 @@ function show:reset()
   self.dragStart = nil
   self.dragStartInterval = nil
   self.hoverGraph = false
-  self.hoverInterval = false
-  self.needsRepaintBackground = true
-  self.needsRepaintLegend = true
   self:update_layout()
 end
 
@@ -95,8 +92,7 @@ end
 function show:update_layout()
   self.height = (self.graphHeight > 0) and self.graphHeight or self.inchans * self.sigHeight
   self.height = math.max(140, self.height)
-  self.intervalRect = {x = 1, y = self.height - 15, width = self.graphWidth - 1, height = 15}
-  self.graphRect = {x = 0, y = self.height/2, width = self.graphWidth, height = self.height/2 - 15}
+  self.graphRect = {x = 0, y = 0, width = self.graphWidth, height = self.height}
   self.channelRect = {x = self.graphWidth, y = 0, width = self.valWidth, height = self.height}
   self:set_size(self.graphWidth + self.valWidth, self.height)
 end
@@ -129,22 +125,19 @@ function show:mouse_move(x, y)
     self.hover = 0
   end
 
-  local oldHoverInterval = self.hoverInterval
   local oldHoverGraph = self.hoverGraph
-  
   self.hoverGraph = self:point_in_rect(x, y, self.graphRect)
-  self.hoverInterval = self:point_in_rect(x, y, self.intervalRect)
 
-  if oldHover ~= self.hover or oldHoverInterval ~= self.hoverInterval or oldHoverGraph ~= self.hoverGraph then
+  if oldHover ~= self.hover or oldHoverGraph ~= self.hoverGraph then
     self.needsRepaintLegend = true
   end
 end
 
 function show:mouse_drag(x, y)
   if self.dragStart then
-    local dx = x - self.dragStart
-    local scaleFactor = 0.05
-    local newInterval = math.max(1, math.floor(self.dragStartInterval * math.exp(dx * scaleFactor)))
+    local dy = self.dragStart.y - y
+    local scaleFactor = 0.01
+    local newInterval = math.max(1, math.floor(self.dragStartInterval * math.exp(dy * scaleFactor)))
     if newInterval ~= self.interval then
       self:in_1_interval({newInterval})
     end
@@ -152,10 +145,8 @@ function show:mouse_drag(x, y)
 end
 
 function show:mouse_down(x, y)
-  if self.hoverInterval then
-    self.dragStart = x
-    self.dragStartInterval = self.interval
-  end
+  self.dragStart = {x = x, y = y}
+  self.dragStartInterval = self.interval
 end
 
 function show:mouse_up(x, y)
@@ -283,20 +274,9 @@ end
 
 -- Foreground elements (typo and hover)
 function show:paint_layer_3(g)
-  -- Draw interval hover
-  if self.hoverGraph or self.hoverInterval or self.dragStart then
-    if self.hoverInterval or self.dragStart then
-      g:set_color(table.unpack(self.colors.area))  -- Darker gray for direct hover or dragging
-    else
-      g:set_color(table.unpack(self.colors.areaHover))  -- Light gray for graph area hover
-    end
-    g:fill_rect(self.intervalRect.x, self.intervalRect.y, self.intervalRect.width, self.intervalRect.height)
-  end
-  
-  -- Legend: range text, channel if hovered, and scale
-  local intervalText = string.format("1px = %dsp", self.interval)
+  -- Legend: channel if hovered, and scale
   g:set_color(table.unpack(self.colors.text))
-  g:draw_text(intervalText, 3, self.height-13, 100, 10)
+  g:draw_text(string.format("1px = %dsp", self.interval), 3, self.height-13, 100, 10)
   g:draw_text(string.format("% 8.2f", self.max), self.graphWidth-50, 3, 50, 10)
   g:draw_text(string.format("% 8.2f", -self.max), self.graphWidth-50, self.height-13, 50, 10)
 
