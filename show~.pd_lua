@@ -135,7 +135,7 @@ end
 
 function show:mouse_drag(x, y)
   if self.dragStart then
-    local dy = self.dragStart.y - y
+    local dy = y - self.dragStart.y
     local scaleFactor = 0.01
     local newInterval = math.max(1, math.floor(self.dragStartInterval * math.exp(dy * scaleFactor)))
     if newInterval ~= self.interval then
