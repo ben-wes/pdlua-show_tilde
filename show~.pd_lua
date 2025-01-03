@@ -10,6 +10,8 @@ function show:initialize(sel, args)
   self.needsRepaintBackground = true
   self.needsRepaintLegend = true
   self.scale = nil
+  self.continuousInterval = 1
+  self.zoomMode = "normal"
   for i, arg in ipairs(args) do
     if arg == "-scale" then
       self.scale = type(args[i+1]) == "number" and args[i+1] or 1
@@ -45,6 +47,7 @@ end
 
 function show:reset()
   self.sampleIndex = 1
+  self.sampleOffset = 0
   self.bufferIndex = 1
   self.colors = {
     graphGradients = {
@@ -137,21 +140,41 @@ function show:mouse_drag(x, y)
   if self.dragStart then
     local dy = y - self.dragStart.y
     local scaleFactor = 0.01
-    local newInterval = math.max(1, math.floor(self.dragStartInterval * math.exp(dy * scaleFactor)))
-    if newInterval ~= self.interval then
-      self:in_1_interval({newInterval})
+    local newInterval = self.dragStartInterval * math.exp(dy * scaleFactor)
+    
+    -- Apply constraints based on zoom mode
+    if self.zoomMode == "above" then
+      -- Only allow zooming out (increasing interval)
+      newInterval = math.max(1.0, newInterval)
+    elseif self.zoomMode == "below" then
+      -- Only allow zooming in (decreasing interval)
+      newInterval = math.min(1.0, newInterval)
     end
+    -- boundary mode allows both directions
+    
+    self.continuousInterval = math.max(0.01, newInterval)
+    self.needsRepaintLegend = true
   end
 end
 
 function show:mouse_down(x, y)
   self.dragStart = {x = x, y = y}
-  self.dragStartInterval = self.interval
+  self.dragStartInterval = self.continuousInterval
+  
+  -- Determine zoom mode when starting drag
+  if math.abs(self.continuousInterval - 1.0) < 0.001 then
+    -- At 1:1, allow zooming in either direction
+    self.zoomMode = "boundary"
+  else
+    -- Lock direction based on starting position
+    self.zoomMode = self.continuousInterval > 1.0 and "above" or "below"
+  end
 end
 
 function show:mouse_up(x, y)
   self.dragStart = nil
   self.dragStartInterval = nil
+  -- Don't reset zoomMode here, it persists until next mouse_down
 end
 
 function show:point_in_rect(x, y, rect)
@@ -210,21 +233,43 @@ function show:perform(in1)
     for s=1,self.blocksize do
       local sample = in1[s + self.blocksize * (c-1)] or 0
       self.maxVal = math.max(math.abs(sample), self.maxVal)
-      self.avgs[c] = self.avgs[c] * 0.9996 + sample * 0.0004 -- lowpassed avg
-      self.rms[c] = self.rms[c] * 0.9996 + math.sqrt(sample * sample) * 0.0004 -- lowpassed rms
+      self.avgs[c] = self.avgs[c] * 0.9996 + sample * 0.0004
+      self.rms[c] = self.rms[c] * 0.9996 + math.sqrt(sample * sample) * 0.0004
     end
   end
   
   while self.sampleIndex <= self.blocksize do
-    -- ring buffer
+    -- Interpolate between samples for smoother display
     for i=1,self.inchans do
-      self.sigs[i][self.bufferIndex] = in1[self.sampleIndex + self.blocksize * (i-1)]
+      local baseIndex = self.blocksize * (i-1)
+      local exactPos = self.sampleIndex + self.sampleOffset
+      local sampleIndex = math.floor(exactPos)
+      
+      -- Ensure we don't read past the buffer
+      if sampleIndex >= self.blocksize then
+        sampleIndex = self.blocksize - 1
+      end
+      
+      local fraction = exactPos - sampleIndex
+      local sample1 = in1[sampleIndex + baseIndex] or 0
+      local sample2 = in1[math.min(sampleIndex + 1, self.blocksize) + baseIndex] or sample1
+      
+      -- Linear interpolation between samples
+      self.sigs[i][self.bufferIndex] = sample1 * (1 - fraction) + sample2 * fraction
     end
-    -- bufferIndex is the index with the "oldest" sample in the ring buffer
+    
     self.bufferIndex = self.bufferIndex % self.graphWidth + 1
-    self.sampleIndex = self.sampleIndex + self.interval
+    self.sampleIndex = self.sampleIndex + math.floor(self.continuousInterval)
+    self.sampleOffset = self.sampleOffset + (self.continuousInterval % 1)
+    
+    -- Handle accumulated fractional part
+    if self.sampleOffset >= 1 then
+      self.sampleIndex = self.sampleIndex + math.floor(self.sampleOffset)
+      self.sampleOffset = self.sampleOffset % 1
+    end
   end
-  -- sampleIndex is the index where we start reading from the next sample block
+  
+  -- Reset for next block, maintaining only the fractional part
   self.sampleIndex = self.sampleIndex - self.blocksize
   
   -- Gradual decay of maxVal
@@ -276,7 +321,7 @@ end
 function show:paint_layer_3(g)
   -- Legend: channel if hovered, and scale
   g:set_color(table.unpack(self.colors.text))
-  g:draw_text(string.format("1px = %dsp", self.interval), 3, self.height-13, 100, 10)
+  g:draw_text(string.format("1px = %.2fsp", self.continuousInterval), 3, self.height-13, 100, 10)
   g:draw_text(string.format("% 8.2f", self.max), self.graphWidth-50, 3, 50, 10)
   g:draw_text(string.format("% 8.2f", -self.max), self.graphWidth-50, self.height-13, 50, 10)
 
