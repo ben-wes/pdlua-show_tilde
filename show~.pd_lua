@@ -78,6 +78,7 @@ function show:reset()
   self.dragStart = nil
   self.dragStartInterval = nil
   self.hoverGraph = false
+  self.visibleMax = 0
   self:update_layout()
 end
 
@@ -229,12 +230,27 @@ function show:getrange(maxValue)
 end
 
 function show:perform(in1)
+  -- Reset visibleMax at the start of each block only if we need it
+  if not self.scale then
+    self.visibleMax = 0
+  end
+  
   for c=1,self.inchans do
     for s=1,self.blocksize do
       local sample = in1[s + self.blocksize * (c-1)] or 0
       self.maxVal = math.max(math.abs(sample), self.maxVal)
       self.avgs[c] = self.avgs[c] * 0.9996 + sample * 0.0004
       self.rms[c] = self.rms[c] * 0.9996 + math.sqrt(sample * sample) * 0.0004
+    end
+    
+    -- Only scan visible buffer if we're using auto-scaling
+    if not self.scale then
+      for i=1,self.graphWidth do
+        local value = self.sigs[c][i]
+        if value then
+          self.visibleMax = math.max(self.visibleMax, math.abs(value))
+        end
+      end
     end
   end
   
@@ -275,11 +291,11 @@ function show:perform(in1)
   -- Gradual decay of maxVal
   self.maxVal = self.maxVal * 0.99
 
-  -- Calculate target max value
-  local targetMax = self.scale or self:getrange(self.maxVal)
+  -- Use manual scale if set, otherwise calculate from visibleMax
+  local targetMax = self.scale or self:getrange(math.max(self.visibleMax, 0.000001))
   
   -- Smooth transition of max value
-  local transitionSpeed = 0.02  -- Adjust this value to control transition speed
+  local transitionSpeed = 0.02
   self.max = self.max + (targetMax - self.max) * transitionSpeed
 
   if self.max ~= targetMax then
