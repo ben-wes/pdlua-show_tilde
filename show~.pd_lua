@@ -230,27 +230,12 @@ function show:getrange(maxValue)
 end
 
 function show:perform(in1)
-  -- Reset visibleMax at the start of each block only if we need it
-  if not self.scale then
-    self.visibleMax = 0
-  end
-  
   for c=1,self.inchans do
     for s=1,self.blocksize do
       local sample = in1[s + self.blocksize * (c-1)] or 0
       self.maxVal = math.max(math.abs(sample), self.maxVal)
       self.avgs[c] = self.avgs[c] * 0.9996 + sample * 0.0004
       self.rms[c] = self.rms[c] * 0.9996 + math.sqrt(sample * sample) * 0.0004
-    end
-    
-    -- Only scan visible buffer if we're using auto-scaling
-    if not self.scale then
-      for i=1,self.graphWidth do
-        local value = self.sigs[c][i]
-        if value then
-          self.visibleMax = math.max(self.visibleMax, math.abs(value))
-        end
-      end
     end
   end
   
@@ -291,7 +276,7 @@ function show:perform(in1)
   -- Gradual decay of maxVal
   self.maxVal = self.maxVal * 0.99
 
-  -- Use manual scale if set, otherwise calculate from visibleMax
+  -- Use manual scale if set, otherwise use the visibleMax calculated during drawing
   local targetMax = self.scale or self:getrange(math.max(self.visibleMax, 0.000001))
   
   -- Smooth transition of max value
@@ -350,7 +335,7 @@ end
 
 function show:draw_channel(g, idx, isHovered)
   local sig = self.sigs[idx]
-  if not sig then return end  -- Skip drawing if the signal doesn't exist
+  if not sig then return end
 
   local color = self.graphColors[idx] or {255, 255, 255}  -- Default to white if color is not set
   local graphColor = (self.hover == 0 or isHovered) and color or self.colors.area
@@ -362,17 +347,24 @@ function show:draw_channel(g, idx, isHovered)
   -- Graph line
   g:set_color(table.unpack(graphColor))
   
+  -- Reset visibleMax at the start of the first channel draw
+  if idx == 1 and not self.scale then
+    self.visibleMax = 0
+  end
+  
   local function scaleY(value)
-    -- Scale the value to fit within the height, leaving 1px margin at top and bottom
+    -- Track maximum value while scaling (only if not using manual scale)
+    if not self.scale then
+      self.visibleMax = math.max(self.visibleMax, math.abs(value))
+    end
     return (value / self.max * -0.5 + 0.5) * (self.height - 2) + 1
-    -- return scaledY -- math.max(1, math.min(self.height - 1, scaledY)) -- FIXME: clip?
   end
 
   local x0 = (self.bufferIndex - 1) % self.graphWidth
   local y0 = scaleY(sig[x0 + 1] or 0)
   local p = Path(0, y0)
   
-  for x = 1, self.graphWidth - 2 do  -- Changed to self.graphWidth - 2
+  for x = 1, self.graphWidth - 2 do
     local bufferX = (x0 + x) % self.graphWidth + 1
     local y = scaleY(sig[bufferX] or 0)
     p:line_to(x, y)
