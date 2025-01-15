@@ -2,7 +2,7 @@ local show = pd.Class:new():register("show~")
 
 function show:initialize(sel, args)
   self.inlets = {SIGNAL}
-  self.outlets = {DATA}
+  self.outlets = {SIGNAL, DATA}
   self.graphWidth = 152
   self.graphHeight = 0
   self.interval = 1
@@ -205,7 +205,7 @@ function show:in_1_bang()
   for i = 1, self.inchans do
     output[i] = self.sigs[i][(self.bufferIndex - 2) % self.graphWidth + 1]
   end
-  self:outlet(1, "list", output)
+  self:outlet(2, "list", output)
 end
 
 function show:getrange(maxValue)
@@ -251,12 +251,14 @@ function show:perform(in1)
         sampleIndex = self.blocksize - 1
       end
       
-      local fraction = exactPos - sampleIndex
+      -- Constrain fraction to 0..1 range
+      local fraction = math.min(1.0, exactPos - sampleIndex)
       local sample1 = in1[sampleIndex + baseIndex] or 0
       local sample2 = in1[math.min(sampleIndex + 1, self.blocksize) + baseIndex] or sample1
       
       -- Linear interpolation between samples
-      self.sigs[i][self.bufferIndex] = sample1 * (1 - fraction) + sample2 * fraction
+      local interpolatedValue = sample1 * (1 - fraction) + sample2 * fraction
+      self.sigs[i][self.bufferIndex] = interpolatedValue
     end
     
     self.bufferIndex = self.bufferIndex % self.graphWidth + 1
@@ -286,6 +288,7 @@ function show:perform(in1)
   if self.max ~= targetMax then
     self.needsRepaintLegend = true
   end
+  return in1
 end
 
 -- Background
@@ -381,6 +384,8 @@ function show:dsp(samplerate, blocksize, inchans)
   -- pd.post(string.format("samplerate %d, blocksize %d, inchans %d", samplerate, blocksize, table.unpack(inchans)))
   self.blocksize = blocksize
   self.inchans = inchans[1]
+  self:signal_setmultiout(1, self.inchans)
+
   self.sigs = {}
 
   self.needsRepaintBackground = true
