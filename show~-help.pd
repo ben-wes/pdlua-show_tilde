@@ -1,5 +1,5 @@
 #N canvas 500 77 578 477 10;
-#X obj 41 265 show~ 210;
+#X obj 41 265 show~ -width 200 -height 0;
 #X msg 73 220 interval \$1;
 #X msg 231 220 width \$1;
 #X obj 76 199 hsl 136 16 1 48000 1 0 empty empty empty -2 -8 0 10 #fcfcfc #000000 #000000 0 1;
@@ -20,7 +20,7 @@
 #X obj 161 84 *~;
 #X obj 221 84 *~;
 #X obj 281 84 *~;
-#X listbox 41 410 46 0 0 0 - - - 0;
+#X listbox 234 411 46 0 0 0 - - - 0;
 #X obj 389 249 bng 16 250 50 0 empty empty empty 0 -8 0 10 #fcfcfc #000000 #000000;
 #X text 409 249 <-- bang to output;
 #X text 406 41 CREATION ARGS:;
@@ -29,7 +29,9 @@
 #X obj 392 199 hsl 136 16 0.1 10 1 0 empty empty empty -2 -8 0 10 #fcfcfc #000000 #000000 0 1;
 #X msg 389 220 scale \$1;
 #X msg 449 220 scale;
-#X connect 0 0 21 0;
+#X text 406 101 -height <graph height>;
+#X text 406 121 -interval <sp / px>;
+#X connect 0 1 21 0;
 #X connect 1 0 0 0;
 #X connect 2 0 0 0;
 #X connect 3 0 1 0;

@@ -102,9 +102,25 @@ function show:update_layout()
   self:set_size(self.graphWidth + self.valWidth, self.height)
 end
 
+function show:update_args()
+  local args = {
+    "-width", self.graphWidth,
+    "-height", self.graphHeight
+  }
+  if self.scale then
+    table.insert(args, "-scale")
+    table.insert(args, self.scale)
+  end
+  if self.interval ~= 1 then
+    table.insert(args, "-interval")
+    table.insert(args, self.interval)
+  end
+  self:set_args(args)
+end
+
 function show:in_1_width(x)
   self.graphWidth = math.max(math.floor(x[1] or 152), 96)
-  self:set_args({"-width", self.graphWidth, "-height", self.graphHeight})
+  self:update_args()
   for i=1, self.inchans do
     self.sigs[i] = {}
   end
@@ -113,9 +129,9 @@ function show:in_1_width(x)
   self:update_layout()
 end
 
-function show:in_1_height(x) -- FIXME
+function show:in_1_height(x)
   self.graphHeight = x[1] or 0
-  self:set_args({"-width", self.graphWidth, "-height", self.graphHeight})
+  self:update_args()
   self.needsRepaintBackground = true
   self.needsRepaintLegend = true
   self:update_layout()
@@ -146,30 +162,25 @@ function show:mouse_drag(x, y)
     
     -- Apply constraints based on zoom mode
     if self.zoomMode == "above" then
-      -- Only allow zooming out (increasing interval)
       newInterval = math.max(1.0, newInterval)
     elseif self.zoomMode == "below" then
-      -- Only allow zooming in (decreasing interval)
       newInterval = math.min(1.0, newInterval)
     end
-    -- boundary mode allows both directions
     
-    self.continuousInterval = math.max(0.01, newInterval)
+    self.interval = math.max(0.01, newInterval)
     self.needsRepaintLegend = true
   end
 end
 
 function show:mouse_down(x, y)
   self.dragStart = {x = x, y = y}
-  self.dragStartInterval = self.continuousInterval
+  self.dragStartInterval = self.interval
   
   -- Determine zoom mode when starting drag
-  if math.abs(self.continuousInterval - 1.0) < 0.001 then
-    -- At 1:1, allow zooming in either direction
+  if math.abs(self.interval - 1.0) < 0.001 then
     self.zoomMode = "boundary"
   else
-    -- Lock direction based on starting position
-    self.zoomMode = self.continuousInterval > 1.0 and "above" or "below"
+    self.zoomMode = self.interval > 1.0 and "above" or "below"
   end
 end
 
@@ -185,12 +196,14 @@ function show:point_in_rect(x, y, rect)
 end
 
 function show:in_1_interval(x)
-  self.interval = math.max(1, math.floor(x[1] or 1))
+  self.interval = math.max(0.01, math.floor(x[1] or 1))
+  self:update_args()
   self.needsRepaintLegend = true
 end
 
 function show:in_1_scale(x)
   self.scale = x[1]
+  self:update_args()
 end
 
 function show:in_1_framedelay(x)
@@ -263,8 +276,8 @@ function show:perform(in1)
     end
     
     self.bufferIndex = self.bufferIndex % self.graphWidth + 1
-    self.sampleIndex = self.sampleIndex + math.floor(self.continuousInterval)
-    self.sampleOffset = self.sampleOffset + (self.continuousInterval % 1)
+    self.sampleIndex = self.sampleIndex + math.floor(self.interval)
+    self.sampleOffset = self.sampleOffset + (self.interval % 1)
     
     -- Handle accumulated fractional part
     if self.sampleOffset >= 1 then
@@ -329,7 +342,7 @@ end
 function show:paint_layer_3(g)
   -- Legend: channel if hovered, and scale
   g:set_color(table.unpack(self.colors.text))
-  g:draw_text(string.format("1px = %.2fsp", self.continuousInterval), 3, self.height-13, 100, 10)
+  g:draw_text(string.format("1px = %.2fsp", self.interval), 3, self.height-13, 100, 10)
   g:draw_text(string.format("% 8.2f", self.max), self.graphWidth-50, 3, 50, 10)
   g:draw_text(string.format("% 8.2f", -self.max), self.graphWidth-50, self.height-13, 50, 10)
 
