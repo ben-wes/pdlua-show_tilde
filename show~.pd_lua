@@ -79,6 +79,7 @@ function show:reset()
   self.dragStartInterval = nil
   self.hoverGraph = false
   self.visibleMax = 0
+  self.visibleMaxUpdated = false
   self:update_layout()
 end
 
@@ -299,6 +300,9 @@ end
 
 -- Graphs
 function show:paint_layer_2(g)
+  -- Reset the visibleMaxUpdated flag at the start of each frame
+  self.visibleMaxUpdated = false
+  
   g:set_color(table.unpack(self.colors.area))
   g:draw_line(0, self.height/2, self.graphWidth - 1, self.height/2, 1)
   -- Graphs, RMS charts, and avg values
@@ -350,9 +354,10 @@ function show:draw_channel(g, idx, isHovered)
   -- Graph line
   g:set_color(table.unpack(graphColor))
   
-  -- Reset visibleMax at the start of the first channel draw
-  if idx == 1 and not self.scale then
+  -- Reset visibleMax at the start of new frame
+  if not self.visibleMaxUpdated and not self.scale then
     self.visibleMax = 0
+    self.visibleMaxUpdated = true
   end
   
   local function scaleY(value)
