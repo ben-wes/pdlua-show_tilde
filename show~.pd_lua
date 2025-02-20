@@ -391,7 +391,7 @@ function show:draw_channel(g, idx, isHovered)
     
     -- Draw lines between actual samples at their exact x positions, working backwards
     for i = 1, maxPoints do
-      local bufferX = (x0 - i + self.graphWidth) % self.graphWidth + 1
+      local bufferX = (x0 - i + self.graphWidth - 1) % self.graphWidth + 1
       local sampleX = lastX - (i * (1/self.interval))
       if sampleX < 0 then break end
       
