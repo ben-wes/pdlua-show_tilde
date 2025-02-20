@@ -262,7 +262,7 @@ function show:perform(in1)
       
       -- Ensure we don't read past the buffer
       if sampleIndex >= self.blocksize then
-        sampleIndex = self.blocksize - 1
+        sampleIndex = self.blocksize
       end
       
       -- Constrain fraction to 0..1 range
@@ -382,13 +382,34 @@ function show:draw_channel(g, idx, isHovered)
   end
 
   local x0 = (self.bufferIndex - 1) % self.graphWidth
-  local y0 = scaleY(sig[x0 + 1] or 0)
-  local p = Path(0, y0)
-  
-  for x = 1, self.graphWidth - 2 do
-    local bufferX = (x0 + x) % self.graphWidth + 1
-    local y = scaleY(sig[bufferX] or 0)
-    p:line_to(x, y)
+  local p
+
+  if self.interval >= 1 then
+    -- Original zoomed-out drawing
+    local y0 = scaleY(sig[x0 + 1] or 0)
+    p = Path(0, y0)
+    for x = 1, self.graphWidth - 1 do
+      local bufferX = (x0 + x) % self.graphWidth + 1
+      local y = scaleY(sig[bufferX] or 0)
+      p:line_to(x, y)
+    end
+  else
+    -- New zoomed-in drawing: work backwards from most recent sample
+    local lastX = self.graphWidth - 1
+    local lastY = scaleY(sig[x0] or 0)  -- Use x0 directly for the most recent sample
+    p = Path(lastX, lastY)
+    
+    -- Calculate how many points we can draw within graphWidth
+    local maxPoints = math.ceil(self.graphWidth * self.interval)
+    
+    -- Draw lines between actual samples at their exact x positions, working backwards
+    for i = 1, maxPoints do
+      local bufferX = (x0 - i + self.graphWidth) % self.graphWidth + 1
+      local y = scaleY(sig[bufferX] or 0)
+      local sampleX = lastX - (i * (1/self.interval))
+      if sampleX < 0 then break end
+      p:line_to(sampleX, y)
+    end
   end
   
   g:stroke_path(p, self.strokeWidth)
