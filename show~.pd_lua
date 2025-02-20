@@ -253,55 +253,43 @@ function show:perform(in1)
     end
   end
   
-  while self.sampleIndex <= self.blocksize do
-    -- Interpolate between samples for smoother display
+  while self.sampleIndex < self.blocksize do  -- Simplified condition
     for i=1,self.inchans do
       local baseIndex = self.blocksize * (i-1)
-      local exactPos = self.sampleIndex + self.sampleOffset
-      local sampleIndex = math.floor(exactPos)
       
-      -- Ensure we don't read past the buffer
-      if sampleIndex >= self.blocksize then
-        sampleIndex = self.blocksize
+      if self.interval < 1 then
+        -- Write the sample directly, no interpolation
+        self.sigs[i][self.bufferIndex] = in1[self.sampleIndex + baseIndex + 1] or 0
+      else
+        -- Keep interpolation for zoomed out mode
+        local exactPos = self.sampleIndex + self.sampleOffset
+        local sampleIndex = math.floor(exactPos)
+        local fraction = math.min(1.0, exactPos - sampleIndex)
+        local sample1 = in1[sampleIndex + baseIndex + 1] or 0
+        local sample2 = in1[math.min(sampleIndex + 2, self.blocksize) + baseIndex] or sample1
+        self.sigs[i][self.bufferIndex] = sample1 * (1 - fraction) + sample2 * fraction
       end
-      
-      -- Constrain fraction to 0..1 range
-      local fraction = math.min(1.0, exactPos - sampleIndex)
-      local sample1 = in1[sampleIndex + baseIndex] or 0
-      local sample2 = in1[math.min(sampleIndex + 1, self.blocksize) + baseIndex] or sample1
-      
-      -- Linear interpolation between samples
-      local interpolatedValue = sample1 * (1 - fraction) + sample2 * fraction
-      self.sigs[i][self.bufferIndex] = interpolatedValue
     end
     
     self.bufferIndex = self.bufferIndex % self.graphWidth + 1
-    self.sampleIndex = self.sampleIndex + math.floor(self.interval)
-    self.sampleOffset = self.sampleOffset + (self.interval % 1)
     
-    -- Handle accumulated fractional part
-    if self.sampleOffset >= 1 then
-      self.sampleIndex = self.sampleIndex + math.floor(self.sampleOffset)
-      self.sampleOffset = self.sampleOffset % 1
+    if self.interval < 1 then
+      -- For zoomed in mode, just increment by 1
+      self.sampleIndex = self.sampleIndex + 1
+    else
+      -- For zoomed out mode, keep fractional stepping
+      self.sampleIndex = self.sampleIndex + math.floor(self.interval)
+      self.sampleOffset = self.sampleOffset + (self.interval % 1)
+      if self.sampleOffset >= 1 then
+        self.sampleIndex = self.sampleIndex + math.floor(self.sampleOffset)
+        self.sampleOffset = self.sampleOffset % 1
+      end
     end
   end
   
-  -- Reset for next block, maintaining only the fractional part
+  -- Reset for next block
   self.sampleIndex = self.sampleIndex - self.blocksize
   
-  -- Gradual decay of maxVal
-  self.maxVal = self.maxVal * 0.99
-
-  -- Use manual scale if set, otherwise use the visibleMax calculated during drawing
-  local targetMax = self.scale or self:getrange(math.max(self.visibleMax, 0.000001))
-  
-  -- Smooth transition of max value
-  local transitionSpeed = 0.02
-  self.max = self.max + (targetMax - self.max) * transitionSpeed
-
-  if self.max ~= targetMax then
-    self.needsRepaintLegend = true
-  end
   return in1
 end
 
@@ -382,7 +370,6 @@ function show:draw_channel(g, idx, isHovered)
   end
 
   local x0 = (self.bufferIndex - 1) % self.graphWidth
-  local p
 
   if self.interval >= 1 then
     -- Original zoomed-out drawing
@@ -396,7 +383,7 @@ function show:draw_channel(g, idx, isHovered)
   else
     -- New zoomed-in drawing: work backwards from most recent sample
     local lastX = self.graphWidth - 1
-    local lastY = scaleY(sig[x0] or 0)  -- Use x0 directly for the most recent sample
+    local lastY = scaleY(sig[x0] or 0)
     p = Path(lastX, lastY)
     
     -- Calculate how many points we can draw within graphWidth
@@ -405,9 +392,10 @@ function show:draw_channel(g, idx, isHovered)
     -- Draw lines between actual samples at their exact x positions, working backwards
     for i = 1, maxPoints do
       local bufferX = (x0 - i + self.graphWidth) % self.graphWidth + 1
-      local y = scaleY(sig[bufferX] or 0)
       local sampleX = lastX - (i * (1/self.interval))
       if sampleX < 0 then break end
+      
+      local y = scaleY(sig[bufferX] or 0)
       p:line_to(sampleX, y)
     end
   end
