@@ -196,7 +196,7 @@ function show:point_in_rect(x, y, rect)
 end
 
 function show:in_1_interval(x)
-  self.interval = math.max(0.01, math.floor(x[1] or 1))
+  self.interval = math.max(0.01, x[1] or 1)
   self:update_args()
   self.needsRepaintLegend = true
 end
