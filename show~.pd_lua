@@ -286,11 +286,25 @@ function show:perform(in1)
       end
     end
   end
-  
+    
   -- Reset for next block
   self.sampleIndex = self.sampleIndex - self.blocksize
   
-  return in1
+  -- Gradual decay of maxVal
+  self.maxVal = self.maxVal * 0.99
+
+  -- Use manual scale if set, otherwise use the visibleMax calculated during drawing
+  local targetMax = self.scale or self:getrange(math.max(self.visibleMax, 0.000001))
+  
+  -- Smooth transition of max value
+  local transitionSpeed = 0.02
+  self.max = self.max + (targetMax - self.max) * transitionSpeed
+
+  if self.max ~= targetMax then
+    self.needsRepaintLegend = true
+  end
+
+    return in1
 end
 
 -- Background
