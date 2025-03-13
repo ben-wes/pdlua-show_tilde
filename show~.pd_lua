@@ -95,7 +95,15 @@ function show:get_channel_from_point(x, y)
 end
 
 function show:update_layout()
-  self.height = (self.graphHeight > 0) and self.graphHeight or self.inchans * self.sigHeight
+  -- Only use graphHeight if explicitly set (greater than 0), otherwise calculate based on channels
+  if self.graphHeight > 0 then
+    self.height = self.graphHeight
+  else
+    -- Ensure we have at least one channel worth of height
+    local effectiveChannels = math.max(1, self.inchans or 1)
+    self.height = effectiveChannels * self.sigHeight
+  end
+  -- Maintain minimum height requirement
   self.height = math.max(140, self.height)
   self.graphRect = {x = 0, y = 0, width = self.graphWidth, height = self.height}
   self.channelRect = {x = self.graphWidth, y = 0, width = self.valWidth, height = self.height}
@@ -249,7 +257,7 @@ function show:perform(in1)
       local sample = in1[s + self.blocksize * (c-1)] or 0
       self.maxVal = math.max(math.abs(sample), self.maxVal)
       self.avgs[c] = self.avgs[c] * 0.9996 + sample * 0.0004
-      self.rms[c] = self.rms[c] * 0.9996 + math.sqrt(sample * sample) * 0.0004
+      self.rms[c] = self.rms[c] * 0.9996 + (sample * sample) * 0.0004
     end
   end
   
@@ -362,9 +370,14 @@ function show:draw_channel(g, idx, isHovered)
   local color = self.graphColors[idx] or {255, 255, 255}  -- Default to white if color is not set
   local graphColor = (self.hover == 0 or isHovered) and color or self.colors.area
   
+  -- Calculate actual RMS value
+  local rmsValue = math.sqrt(self.rms[idx] or 0)
+  
   -- RMS bar
   g:set_color(table.unpack(isHovered and self.colors.valueHover or self.colors.value))
-  g:fill_rect(self.graphWidth, self.sigHeight * (idx-1) + 1, self.valWidth*math.min(1, self.rms[idx] or 0), self.sigHeight-1)
+  g:fill_rect(self.graphWidth, self.sigHeight * (idx-1) + 1, 
+              self.valWidth * math.min(1, rmsValue), 
+              self.sigHeight-1)
   
   -- Graph line
   g:set_color(table.unpack(graphColor))
@@ -416,33 +429,43 @@ function show:draw_channel(g, idx, isHovered)
   
   g:stroke_path(p, self.strokeWidth)
   
-  -- Average value text
+  -- Display just the average value
   g:set_color(table.unpack((self.hover == 0 or isHovered) and color or self.colors.text))
   g:draw_text(string.format("% 7.2f", self.avgs[idx] or 0), self.graphWidth + 4, idx * self.sigHeight - 13, self.valWidth, 10)
 end
 
 function show:dsp(samplerate, blocksize, inchans)
-  -- pd.post(string.format("samplerate %d, blocksize %d, inchans %d", samplerate, blocksize, table.unpack(inchans)))
+  -- Store old channel count to detect changes
+  local oldChannels = self.inchans
+  
+  -- Update basic parameters
   self.blocksize = blocksize
   self.inchans = inchans[1]
   self:signal_setmultiout(1, self.inchans)
 
+  -- Reset signal buffers
   self.sigs = {}
-
-  self.needsRepaintBackground = true
-  self.needsRepaintLegend = true
-  self:update_layout()  -- Update overlay and hover areas
-
+  self.rms = {}
+  self.avgs = {}
+  
+  -- Generate new colors for channels
   self.graphColors = self:generate_colors(self.inchans)
  
+  -- Initialize buffers for each channel
   for c = 1, self.inchans do
     self.rms[c] = 0
     self.avgs[c] = 0
-    self.sigs[c] = {}  -- Initialize an empty table for each channel
+    self.sigs[c] = {}
   end
   
   -- Reset hover state when channel count changes
-  self.hover = 0
+  if oldChannels ~= self.inchans then
+    self.hover = 0
+    -- Force layout update when channel count changes
+    self.needsRepaintBackground = true
+    self.needsRepaintLegend = true
+    self:update_layout()
+  end
 end
 
 function show:hsv_to_rgb(h, s, v)
