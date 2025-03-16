@@ -370,13 +370,14 @@ function show:draw_channel(g, idx, isHovered)
   local color = self.graphColors[idx] or {255, 255, 255}  -- Default to white if color is not set
   local graphColor = (self.hover == 0 or isHovered) and color or self.colors.area
   
-  -- Calculate actual RMS value
+  -- Calculate actual RMS value and scale it according to self.max
   local rmsValue = math.sqrt(self.rms[idx] or 0)
+  local scaledRMS = rmsValue / self.max
   
   -- RMS bar
   g:set_color(table.unpack(isHovered and self.colors.valueHover or self.colors.value))
   g:fill_rect(self.graphWidth, self.sigHeight * (idx-1) + 1, 
-              self.valWidth * math.min(1, rmsValue), 
+              self.valWidth * math.min(1, scaledRMS), 
               self.sigHeight-1)
   
   -- Graph line
