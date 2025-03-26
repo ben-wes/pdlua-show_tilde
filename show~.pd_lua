@@ -12,6 +12,7 @@ function show:initialize(sel, args)
   self.scale = nil
   self.continuousInterval = 1
   self.zoomMode = "normal"
+  self.paused = false
   for i, arg in ipairs(args) do
     if arg == "-scale" then
       self.scale = type(args[i+1]) == "number" and args[i+1] or 1
@@ -252,6 +253,11 @@ function show:getrange(maxValue)
 end
 
 function show:perform(in1)
+  -- Skip signal processing if paused
+  if self.paused then
+    return in1
+  end
+
   for c=1,self.inchans do
     for s=1,self.blocksize do
       local sample = in1[s + self.blocksize * (c-1)] or 0
@@ -312,7 +318,7 @@ function show:perform(in1)
     self.needsRepaintLegend = true
   end
 
-    return in1
+  return in1
 end
 
 -- Background
@@ -514,4 +520,9 @@ function show:generate_colors(count)
   end
 
   return colors
+end
+
+function show:in_1_pause(x)
+  local wasPaused = self.paused
+  self.paused = (x[1] or 0) > 0
 end
