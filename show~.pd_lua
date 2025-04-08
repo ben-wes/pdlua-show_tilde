@@ -52,9 +52,9 @@ function show:reset()
   self.bufferIndex = 1
   self.colors = {
     graphGradients = {
-      hue =        {210, 340},
-      saturation = { 90,  94},
-      brightness = { 70,  80},
+      hue =        {-20, 260},
+      saturation = {90, 97},
+      brightness = {70, 75},
     },
     background = {248, 248, 248},
     areaHover =  {200, 200, 200},
@@ -112,10 +112,16 @@ function show:update_layout()
 end
 
 function show:update_args()
-  local args = {
-    "-width", self.graphWidth,
-    "-height", self.graphHeight
-  }
+  local args = {}
+  
+  if self.graphHeight > 0 then
+    table.insert(args, "-height")
+    table.insert(args, self.graphHeight)
+  end
+  if self.graphWidth > 0 then
+    table.insert(args, "-width")
+    table.insert(args, self.graphWidth)
+  end
   if self.scale then
     table.insert(args, "-scale")
     table.insert(args, self.scale)
@@ -271,11 +277,11 @@ function show:perform(in1)
     for i=1,self.inchans do
       local baseIndex = self.blocksize * (i-1)
       
-      if self.interval < 1 then
-        -- Write the sample directly, no interpolation
+      if self.interval < 1 or math.abs(self.interval - 1) < 0.001 then
+        -- Write the sample directly, no interpolation for zoom in and exactly 1:1
         self.sigs[i][self.bufferIndex] = in1[self.sampleIndex + baseIndex + 1] or 0
       else
-        -- Keep interpolation for zoomed out mode
+        -- Keep interpolation for zoomed out mode only
         local exactPos = self.sampleIndex + self.sampleOffset
         local sampleIndex = math.floor(exactPos)
         local fraction = math.min(1.0, exactPos - sampleIndex)
@@ -405,8 +411,8 @@ function show:draw_channel(g, idx, isHovered)
 
   local x0 = (self.bufferIndex - 1) % self.graphWidth
 
-  if self.interval >= 1 then
-    -- Original zoomed-out drawing
+  if self.interval >= 1 or math.abs(self.interval - 1) < 0.001 then
+    -- Draw one sample per pixel, left to right (handles both 1:1 and zoomed out)
     local y0 = scaleY(sig[x0 + 1] or 0)
     p = Path(0, y0)
     for x = 1, self.graphWidth - 1 do
@@ -415,7 +421,7 @@ function show:draw_channel(g, idx, isHovered)
       p:line_to(x, y)
     end
   else
-    -- New zoomed-in drawing: work backwards from most recent sample
+    -- Zoomed-in drawing: work backwards from most recent sample
     local lastX = self.graphWidth - 1
     local lastY = scaleY(sig[x0] or 0)
     p = Path(lastX, lastY)
