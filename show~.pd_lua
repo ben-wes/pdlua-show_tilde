@@ -13,6 +13,9 @@ function show:initialize(sel, args)
   self.continuousInterval = 1
   self.zoomMode = "normal"
   self.paused = false
+  self.hoverResizeHandle = false
+  self.resizing = false
+  self.resizeStart = nil
   for i, arg in ipairs(args) do
     if arg == "-scale" then
       self.scale = type(args[i+1]) == "number" and args[i+1] or 1
@@ -52,9 +55,9 @@ function show:reset()
   self.bufferIndex = 1
   self.colors = {
     graphGradients = {
-      hue =        {-20, 260},
-      saturation = {90, 97},
-      brightness = {70, 75},
+      hue =        {-25, 275},
+      saturation = {85, 95},
+      brightness = {80, 90},
     },
     background = {248, 248, 248},
     areaHover =  {200, 200, 200},
@@ -167,9 +170,26 @@ function show:mouse_move(x, y)
   if oldHover ~= self.hover or oldHoverGraph ~= self.hoverGraph then
     self.needsRepaintLegend = true
   end
+
+  -- Check for resize handle hover (bottom-right 12x12 area)
+  local handleSize = 12
+  local wasHover = self.hoverResizeHandle
+  self.hoverResizeHandle = (x >= self.graphWidth + self.valWidth - handleSize and y >= self.height - handleSize)
+  if wasHover ~= self.hoverResizeHandle then
+    self.needsRepaintLegend = true
+  end
 end
 
 function show:mouse_drag(x, y)
+  if self.resizing and self.resizeStart then
+    local dx = x - self.resizeStart.x
+    local dy = y - self.resizeStart.y
+    local newWidth = self.resizeStart.width + dx
+    local newHeight = self.resizeStart.height + dy
+    self:in_1_width({newWidth})
+    self:in_1_height({newHeight})
+    return
+  end
   if self.dragStart then
     local dy = y - self.dragStart.y
     local scaleFactor = 0.01
@@ -188,6 +208,12 @@ function show:mouse_drag(x, y)
 end
 
 function show:mouse_down(x, y)
+  local handleSize = 12
+  if x >= self.graphWidth + self.valWidth - handleSize and y >= self.height - handleSize then
+    self.resizing = true
+    self.resizeStart = {x = x, y = y, width = self.graphWidth, height = self.height}
+    return
+  end
   self.dragStart = {x = x, y = y}
   self.dragStartInterval = self.interval
   
@@ -200,6 +226,11 @@ function show:mouse_down(x, y)
 end
 
 function show:mouse_up(x, y)
+  if self.resizing then
+    self.resizing = false
+    self.resizeStart = nil
+    return
+  end
   self.dragStart = nil
   self.dragStartInterval = nil
   -- Don't reset zoomMode here, it persists until next mouse_down
@@ -373,6 +404,16 @@ function show:paint_layer_3(g)
     g:set_color(table.unpack(self.graphColors[self.hover] or {0, 0, 0}))
     g:draw_text(string.format("ch %d", self.hover), 3, 3, 64, 10)
   end
+
+  -- Draw resize handle
+  local baseSize = 4
+  local handleSize = self.hoverResizeHandle and 12 or baseSize
+  local x0 = self.graphWidth + self.valWidth - handleSize
+  local y0 = self.height - handleSize
+  g:set_color(1)
+  g:fill_rect(x0 - (self.hoverResizeHandle and 0 or 2), 
+              y0 - (self.hoverResizeHandle and 0 or 4), 
+              handleSize, handleSize)
 end
 
 function show:draw_channel(g, idx, isHovered)
