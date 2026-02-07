@@ -55,9 +55,9 @@ function show:reset()
   self.bufferIndex = 1
   self.colors = {
     graphGradients = {
-      hue =        {-25, 275},
-      saturation = {85, 95},
-      brightness = {80, 90},
+      hue =        {-150, 14},
+      saturation = {92, 98},
+      brightness = {94, 97},
     },
     background = {248, 248, 248},
     areaHover =  {200, 200, 200},
@@ -366,6 +366,16 @@ end
 
 -- Graphs
 function show:paint_layer_2(g)
+  -- Draw resize handle
+  local baseSize = 4
+  local handleSize = self.hoverResizeHandle and 12 or baseSize
+  local x0 = self.graphWidth + self.valWidth - handleSize
+  local y0 = self.height - handleSize
+  g:set_color(table.unpack(self.hoverResizeHandle and self.colors.valueHover or self.colors.value))
+  g:fill_rect(x0 - (self.hoverResizeHandle and 0 or 2), 
+              y0 - (self.hoverResizeHandle and 0 or 4), 
+              handleSize, handleSize)
+
   -- Reset the visibleMaxUpdated flag at the start of each frame
   self.visibleMaxUpdated = false
   
@@ -404,16 +414,6 @@ function show:paint_layer_3(g)
     g:set_color(table.unpack(self.graphColors[self.hover] or {0, 0, 0}))
     g:draw_text(string.format("ch %d", self.hover), 3, 3, 64, 10)
   end
-
-  -- Draw resize handle
-  local baseSize = 4
-  local handleSize = self.hoverResizeHandle and 12 or baseSize
-  local x0 = self.graphWidth + self.valWidth - handleSize
-  local y0 = self.height - handleSize
-  g:set_color(1)
-  g:fill_rect(x0 - (self.hoverResizeHandle and 0 or 2), 
-              y0 - (self.hoverResizeHandle and 0 or 4), 
-              handleSize, handleSize)
 end
 
 function show:draw_channel(g, idx, isHovered)
